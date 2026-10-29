@@ -1,0 +1,35 @@
+sequenceDiagram
+    autonumber
+    participant API as Transactional API
+    participant DB as SQL DB / Outbox
+    participant PUB as Outbox Publisher
+    participant SB as Service Bus Topic
+    participant FN as Azure Function
+    participant BLOB as Blob Storage
+    participant COS as Cosmos DB
+
+    API->>DB: Commit business change + outbox event
+    DB-->>API: Transaction committed
+    PUB->>DB: Read pending outbox record
+    PUB->>SB: Publish AuditEvent (stable eventId)
+    SB-->>PUB: Send accepted
+    PUB->>DB: Mark outbox record published
+    SB->>FN: Deliver message
+    FN->>FN: Validate schema, tenant, eventId
+    alt Large payload
+        FN->>BLOB: Idempotent write using deterministic blob name
+        BLOB-->>FN: Blob reference + optional content hash
+        FN->>COS: Create audit document with blob reference
+    else Small payload
+        FN->>COS: Create audit document with payload
+    end
+    alt Cosmos create succeeds
+        COS-->>FN: Created
+        FN->>SB: Complete message
+    else Document already exists
+        COS-->>FN: Conflict
+        FN->>COS: Verify existing event matches eventId/content
+        FN->>SB: Complete only if duplicate is confirmed
+    else Transient failure
+        FN-->>SB: Abandon / allow retry according to policy
+    end

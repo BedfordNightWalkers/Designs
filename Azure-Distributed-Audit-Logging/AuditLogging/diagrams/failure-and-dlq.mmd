@@ -1,0 +1,20 @@
+flowchart TD
+    START[Service Bus delivers event] --> VALIDATE{Valid event and schema?}
+    VALIDATE -- No --> PERM[Dead-letter with safe reason code]
+    VALIDATE -- Yes --> PROCESS[Function writes Blob if needed, then Cosmos]
+    PROCESS --> SUCCESS{All required durable writes succeeded?}
+    SUCCESS -- Yes --> COMPLETE[Complete Service Bus message]
+    SUCCESS -- No --> TRANSIENT{Transient and retryable?}
+    TRANSIENT -- Yes --> RETRY[Retry / abandon with bounded policy]
+    RETRY --> COUNT{Max delivery count exceeded?}
+    COUNT -- No --> START
+    COUNT -- Yes --> DLQ[Subscription dead-letter queue]
+    TRANSIENT -- No --> PERM
+    PERM --> DLQ
+    DLQ --> ALERT[Alert and inspect reason, eventId, correlationId]
+    ALERT --> FIX[Fix dependency/configuration or quarantine invalid event]
+    FIX --> APPROVE{Safe to replay?}
+    APPROVE -- No --> HOLD[Keep quarantined; document disposition]
+    APPROVE -- Yes --> REPLAY[Controlled replay preserving original eventId]
+    REPLAY --> START
+    COMPLETE --> END[Processing finished]

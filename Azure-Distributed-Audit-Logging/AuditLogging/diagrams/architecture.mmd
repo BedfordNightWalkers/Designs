@@ -1,0 +1,29 @@
+flowchart LR
+    API[Transactional API / Domain Service]
+    OUTBOX[(SQL Outbox<br/>optional but recommended)]
+    PUB[Outbox Publisher]
+    TOPIC[Azure Service Bus Topic]
+    SUB[Audit subscription]
+    FUNC[Azure Function consumer]
+    COSMOS[(Azure Cosmos DB<br/>audit metadata)]
+    BLOB[(Azure Blob Storage<br/>large payloads)]
+    DLQ[Subscription DLQ]
+    OPS[Operations / replay job]
+    MON[Azure Monitor / Application Insights]
+
+    API -->|business transaction + outbox row| OUTBOX
+    OUTBOX --> PUB
+    PUB -->|AuditEvent with stable eventId| TOPIC
+    TOPIC --> SUB
+    SUB --> FUNC
+    FUNC -->|small payload or metadata + blob reference| COSMOS
+    FUNC -->|large payload, deterministic blob name| BLOB
+    SUB -. max delivery count exceeded .-> DLQ
+    OPS -->|inspect, repair, controlled replay| DLQ
+    OPS -->|resubmit after approval| TOPIC
+    MON --- API
+    MON --- PUB
+    MON --- TOPIC
+    MON --- FUNC
+    MON --- COSMOS
+    MON --- BLOB
